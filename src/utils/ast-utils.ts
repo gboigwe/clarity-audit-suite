@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { ClarityAst, ClarityNode, FunctionDefinition, FunctionCall } from '../parser/types';
+import { ClarityAst, ClarityNode, FunctionDefinition, FunctionCall, Parameter } from '../parser/types';
 
 export class AstVisualizer {
   /**
@@ -38,19 +38,19 @@ export class AstVisualizer {
         const nameStr = colored ? chalk.yellow(funcNode.name) : funcNode.name;
         lines.push(`${prefix}${typeStr}: ${nameStr}`);
         
-        // Add parameters
-        if (funcNode.params.length > 0) {
+        // Add parameters - FIX: Proper typing for parameters
+        if (funcNode.parameters && funcNode.parameters.length > 0) {
           lines.push(`${childPrefix}├─ ${colored ? chalk.cyan('Parameters') : 'Parameters'}:`);
-          funcNode.params.forEach((param, i: number) => {
-            const paramPrefix = i === funcNode.params.length - 1 ? `${childPrefix}│  └─ ` : `${childPrefix}│  ├─ `;
+          funcNode.parameters.forEach((param: Parameter, i: number) => {
+            const paramPrefix = i === funcNode.parameters.length - 1 ? `${childPrefix}│  └─ ` : `${childPrefix}│  ├─ `;
             const paramName = colored ? chalk.yellow(param.name) : param.name;
-            const paramType = colored ? chalk.magenta(param.type) : param.type;
+            const paramType = colored ? chalk.magenta(param.paramType?.kind || 'unknown') : (param.paramType?.kind || 'unknown');
             lines.push(`${paramPrefix}${paramName}: ${paramType}`);
           });
         }
         
         // Add body
-        if (funcNode.body.length > 0) {
+        if (funcNode.body && funcNode.body.length > 0) {
           lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Body') : 'Body'}:`);
           funcNode.body.forEach((bodyNode, i: number) => {
             const bodyPrefix = i === funcNode.body.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
@@ -64,50 +64,77 @@ export class AstVisualizer {
       }
       
       case 'constant-definition': {
-        const nameStr = colored ? chalk.yellow(node.name) : node.name;
+        const constantNode = node as any;
+        const nameStr = colored ? chalk.yellow(constantNode.name) : constantNode.name;
         lines.push(`${prefix}${typeStr}: ${nameStr}`);
         
         // Add value
-        const valuePrefix = `${childPrefix}└─ `;
-        const valueChildPrefix = `${childPrefix}   `;
-        lines.push(
-          ...this.visualizeNode(node.value, valuePrefix, valueChildPrefix, colored)
-        );
+        if (constantNode.value) {
+          const valuePrefix = `${childPrefix}└─ `;
+          const valueChildPrefix = `${childPrefix}   `;
+          lines.push(
+            ...this.visualizeNode(constantNode.value, valuePrefix, valueChildPrefix, colored)
+          );
+        }
         break;
       }
       
       case 'map-definition': {
-        const nameStr = colored ? chalk.yellow(node.name) : node.name;
+        const mapNode = node as any;
+        const nameStr = colored ? chalk.yellow(mapNode.name) : mapNode.name;
         lines.push(`${prefix}${typeStr}: ${nameStr}`);
         
         // Add key type
-        lines.push(`${childPrefix}├─ ${colored ? chalk.cyan('Key Type') : 'Key Type'}:`);
-        const keyPrefix = `${childPrefix}│  └─ `;
-        const keyChildPrefix = `${childPrefix}│     `;
-        lines.push(
-          ...this.visualizeNode(node.keyType, keyPrefix, keyChildPrefix, colored)
-        );
+        if (mapNode.keyType) {
+          lines.push(`${childPrefix}├─ ${colored ? chalk.cyan('Key Type') : 'Key Type'}:`);
+          const keyPrefix = `${childPrefix}│  └─ `;
+          const keyChildPrefix = `${childPrefix}│     `;
+          lines.push(`${keyPrefix}${mapNode.keyType.kind || 'unknown'}`);
+        }
         
         // Add value type
-        lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Value Type') : 'Value Type'}:`);
-        const valuePrefix = `${childPrefix}   └─ `;
-        const valueChildPrefix = `${childPrefix}      `;
-        lines.push(
-          ...this.visualizeNode(node.valueType, valuePrefix, valueChildPrefix, colored)
-        );
+        if (mapNode.valueType) {
+          lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Value Type') : 'Value Type'}:`);
+          const valuePrefix = `${childPrefix}   └─ `;
+          lines.push(`${valuePrefix}${mapNode.valueType.kind || 'unknown'}`);
+        }
+        break;
+      }
+      
+      case 'data-var-definition': {
+        const varNode = node as any;
+        const nameStr = colored ? chalk.yellow(varNode.name) : varNode.name;
+        lines.push(`${prefix}${typeStr}: ${nameStr}`);
+        
+        // Add variable type
+        if (varNode.varType) {
+          lines.push(`${childPrefix}├─ ${colored ? chalk.cyan('Type') : 'Type'}: ${varNode.varType.kind || 'unknown'}`);
+        }
+        
+        // Add initial value
+        if (varNode.initialValue) {
+          lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Initial Value') : 'Initial Value'}:`);
+          const valuePrefix = `${childPrefix}   └─ `;
+          const valueChildPrefix = `${childPrefix}      `;
+          lines.push(
+            ...this.visualizeNode(varNode.initialValue, valuePrefix, valueChildPrefix, colored)
+          );
+        }
         break;
       }
       
       case 'function-call': {
-        const nameStr = colored ? chalk.yellow(node.name) : node.name;
+        const callNode = node as any;
+        const functionName = this.getFunctionName(callNode.function || callNode);
+        const nameStr = colored ? chalk.yellow(functionName) : functionName;
         lines.push(`${prefix}${typeStr}: ${nameStr}`);
         
         // Add arguments
-        if (node.arguments.length > 0) {
+        if (callNode.arguments && callNode.arguments.length > 0) {
           lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Arguments') : 'Arguments'}:`);
-          node.arguments.forEach((arg: ClarityNode, i: number) => {
-            const argPrefix = i === node.arguments.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
-            const argChildPrefix = i === node.arguments.length - 1 ? `${childPrefix}      ` : `${childPrefix}   │  `;
+          callNode.arguments.forEach((arg: ClarityNode, i: number) => {
+            const argPrefix = i === callNode.arguments.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
+            const argChildPrefix = i === callNode.arguments.length - 1 ? `${childPrefix}      ` : `${childPrefix}   │  `;
             lines.push(
               ...this.visualizeNode(arg, argPrefix, argChildPrefix, colored)
             );
@@ -117,30 +144,33 @@ export class AstVisualizer {
       }
       
       case 'let-expression': {
+        const letNode = node as any;
         lines.push(`${prefix}${typeStr}`);
         
         // Add bindings
-        if (node.bindings.length > 0) {
+        if (letNode.bindings && letNode.bindings.length > 0) {
           lines.push(`${childPrefix}├─ ${colored ? chalk.cyan('Bindings') : 'Bindings'}:`);
-          node.bindings.forEach((binding: { name: string, value: ClarityNode }, i: number) => {
-            const bindingPrefix = i === node.bindings.length - 1 ? `${childPrefix}│  └─ ` : `${childPrefix}│  ├─ `;
+          letNode.bindings.forEach((binding: any, i: number) => {
+            const bindingPrefix = i === letNode.bindings.length - 1 ? `${childPrefix}│  └─ ` : `${childPrefix}│  ├─ `;
             const bindingName = colored ? chalk.yellow(binding.name) : binding.name;
             lines.push(`${bindingPrefix}${bindingName}:`);
             
-            const valuePrefix = `${childPrefix}│     └─ `;
-            const valueChildPrefix = `${childPrefix}│        `;
-            lines.push(
-              ...this.visualizeNode(binding.value, valuePrefix, valueChildPrefix, colored)
-            );
+            if (binding.value) {
+              const valuePrefix = `${childPrefix}│     └─ `;
+              const valueChildPrefix = `${childPrefix}│        `;
+              lines.push(
+                ...this.visualizeNode(binding.value, valuePrefix, valueChildPrefix, colored)
+              );
+            }
           });
         }
         
         // Add body
-        if (node.body.length > 0) {
+        if (letNode.body && letNode.body.length > 0) {
           lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Body') : 'Body'}:`);
-          node.body.forEach((bodyNode: ClarityNode, i: number) => {
-            const bodyPrefix = i === node.body.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
-            const bodyChildPrefix = i === node.body.length - 1 ? `${childPrefix}      ` : `${childPrefix}   │  `;
+          letNode.body.forEach((bodyNode: ClarityNode, i: number) => {
+            const bodyPrefix = i === letNode.body.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
+            const bodyChildPrefix = i === letNode.body.length - 1 ? `${childPrefix}      ` : `${childPrefix}   │  `;
             lines.push(
               ...this.visualizeNode(bodyNode, bodyPrefix, bodyChildPrefix, colored)
             );
@@ -150,14 +180,15 @@ export class AstVisualizer {
       }
       
       case 'begin-expression': {
+        const beginNode = node as any;
         lines.push(`${prefix}${typeStr}`);
         
         // Add body
-        if (node.body.length > 0) {
+        if (beginNode.body && beginNode.body.length > 0) {
           lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Body') : 'Body'}:`);
-          node.body.forEach((bodyNode: ClarityNode, i: number) => {
-            const bodyPrefix = i === node.body.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
-            const bodyChildPrefix = i === node.body.length - 1 ? `${childPrefix}      ` : `${childPrefix}   │  `;
+          beginNode.body.forEach((bodyNode: ClarityNode, i: number) => {
+            const bodyPrefix = i === beginNode.body.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
+            const bodyChildPrefix = i === beginNode.body.length - 1 ? `${childPrefix}      ` : `${childPrefix}   │  `;
             lines.push(
               ...this.visualizeNode(bodyNode, bodyPrefix, bodyChildPrefix, colored)
             );
@@ -166,36 +197,146 @@ export class AstVisualizer {
         break;
       }
       
+      case 'if-expression': {
+        const ifNode = node as any;
+        lines.push(`${prefix}${typeStr}`);
+        
+        // Add condition
+        if (ifNode.condition) {
+          lines.push(`${childPrefix}├─ ${colored ? chalk.cyan('Condition') : 'Condition'}:`);
+          const condPrefix = `${childPrefix}│  └─ `;
+          const condChildPrefix = `${childPrefix}│     `;
+          lines.push(
+            ...this.visualizeNode(ifNode.condition, condPrefix, condChildPrefix, colored)
+          );
+        }
+        
+        // Add then branch
+        if (ifNode.then) {
+          lines.push(`${childPrefix}├─ ${colored ? chalk.cyan('Then') : 'Then'}:`);
+          const thenPrefix = `${childPrefix}│  └─ `;
+          const thenChildPrefix = `${childPrefix}│     `;
+          lines.push(
+            ...this.visualizeNode(ifNode.then, thenPrefix, thenChildPrefix, colored)
+          );
+        }
+        
+        // Add else branch if present
+        if (ifNode.else) {
+          lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Else') : 'Else'}:`);
+          const elsePrefix = `${childPrefix}   └─ `;
+          const elseChildPrefix = `${childPrefix}      `;
+          lines.push(
+            ...this.visualizeNode(ifNode.else, elsePrefix, elseChildPrefix, colored)
+          );
+        }
+        break;
+      }
+      
       case 'identifier': {
-        const valueStr = colored ? chalk.yellow(node.value) : node.value;
+        const idNode = node as any;
+        const valueStr = colored ? chalk.yellow(idNode.name || idNode.value || 'unknown') : (idNode.name || idNode.value || 'unknown');
         lines.push(`${prefix}${typeStr}: ${valueStr}`);
         break;
       }
       
       case 'string-literal': {
-        const valueStr = colored ? chalk.yellow(`"${node.value}"`) : `"${node.value}"`;
+        const strNode = node as any;
+        const valueStr = colored ? chalk.yellow(`"${strNode.value}"`) : `"${strNode.value}"`;
         lines.push(`${prefix}${typeStr}: ${valueStr}`);
         break;
       }
       
-      case 'number-literal': {
-        const valueStr = colored ? chalk.yellow(node.value) : node.value;
+      case 'uint-literal':
+      case 'int-literal': {
+        const numNode = node as any;
+        const valueStr = colored ? chalk.yellow(numNode.value?.toString() || numNode.raw || 'unknown') : (numNode.value?.toString() || numNode.raw || 'unknown');
         lines.push(`${prefix}${typeStr}: ${valueStr}`);
         break;
       }
       
       case 'bool-literal': {
-        const valueStr = colored ? chalk.yellow(String(node.value)) : String(node.value);
+        const boolNode = node as any;
+        const valueStr = colored ? chalk.yellow(String(boolNode.value)) : String(boolNode.value);
         lines.push(`${prefix}${typeStr}: ${valueStr}`);
         break;
       }
       
+      case 'buff-literal': {
+        const buffNode = node as any;
+        const valueStr = colored ? chalk.yellow(buffNode.raw || 'buffer') : (buffNode.raw || 'buffer');
+        lines.push(`${prefix}${typeStr}: ${valueStr}`);
+        break;
+      }
+      
+      case 'principal-literal': {
+        const principalNode = node as any;
+        const valueStr = colored ? chalk.yellow(principalNode.value || 'principal') : (principalNode.value || 'principal');
+        lines.push(`${prefix}${typeStr}: ${valueStr}`);
+        break;
+      }
+      
+      case 'list-expression': {
+        const listNode = node as any;
+        lines.push(`${prefix}${typeStr}`);
+        
+        if (listNode.elements && listNode.elements.length > 0) {
+          lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Elements') : 'Elements'}:`);
+          listNode.elements.forEach((element: ClarityNode, i: number) => {
+            const elemPrefix = i === listNode.elements.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
+            const elemChildPrefix = i === listNode.elements.length - 1 ? `${childPrefix}      ` : `${childPrefix}   │  `;
+            lines.push(
+              ...this.visualizeNode(element, elemPrefix, elemChildPrefix, colored)
+            );
+          });
+        }
+        break;
+      }
+      
+      case 'tuple-expression': {
+        const tupleNode = node as any;
+        lines.push(`${prefix}${typeStr}`);
+        
+        if (tupleNode.fields && tupleNode.fields.length > 0) {
+          lines.push(`${childPrefix}└─ ${colored ? chalk.cyan('Fields') : 'Fields'}:`);
+          tupleNode.fields.forEach((field: any, i: number) => {
+            const fieldPrefix = i === tupleNode.fields.length - 1 ? `${childPrefix}   └─ ` : `${childPrefix}   ├─ `;
+            const fieldName = colored ? chalk.yellow(field.name) : field.name;
+            lines.push(`${fieldPrefix}${fieldName}:`);
+            
+            if (field.value) {
+              const valuePrefix = `${childPrefix}      └─ `;
+              const valueChildPrefix = `${childPrefix}         `;
+              lines.push(
+                ...this.visualizeNode(field.value, valuePrefix, valueChildPrefix, colored)
+              );
+            }
+          });
+        }
+        break;
+      }
+      
       default: {
-        lines.push(`${prefix}${typeStr}: ${JSON.stringify(node)}`);
+        lines.push(`${prefix}${typeStr}: ${JSON.stringify(node).substring(0, 50)}...`);
       }
     }
     
     return lines;
+  }
+
+  private static getFunctionName(funcExpr: any): string {
+    if (funcExpr && typeof funcExpr === 'object') {
+      if (funcExpr.type === 'identifier') {
+        return funcExpr.name || funcExpr.value || 'unknown';
+      }
+      if (funcExpr.name) {
+        return funcExpr.name;
+      }
+      if (funcExpr.value) {
+        return funcExpr.value;
+      }
+    }
+    return String(funcExpr || 'unknown');
   }
 }
 
@@ -209,13 +350,17 @@ export class AstUtils {
     const functionCalls: FunctionCall[] = [];
     
     const searchNode = (node: ClarityNode) => {
-      if (node.type === 'function-call' && node.name === functionName) {
-        functionCalls.push(node as FunctionCall);
+      if (node.type === 'function-call') {
+        const call = node as FunctionCall;
+        const callName = this.getFunctionName(call.function);
+        if (callName === functionName) {
+          functionCalls.push(call);
+        }
       }
       
       // Recursively search children
       Object.keys(node).forEach(key => {
-        const value = node[key];
+        const value = (node as any)[key];
         
         if (Array.isArray(value)) {
           value.forEach(item => {
@@ -229,7 +374,9 @@ export class AstUtils {
       });
     };
     
-    ast.body.forEach(searchNode);
+    if (ast.body) {
+      ast.body.forEach(searchNode);
+    }
     
     return functionCalls;
   }
@@ -249,7 +396,7 @@ export class AstUtils {
       
       // Recursively search children
       Object.keys(node).forEach(key => {
-        const value = node[key];
+        const value = (node as any)[key];
         
         if (Array.isArray(value)) {
           value.forEach(item => {
@@ -263,8 +410,29 @@ export class AstUtils {
       });
     };
     
-    ast.body.forEach(searchNode);
+    if (ast.body) {
+      ast.body.forEach(searchNode);
+    }
     
     return nodes;
+  }
+
+  /**
+   * Get function name from a function expression
+   * @param funcExpr Function expression
+   */
+  private static getFunctionName(funcExpr: any): string {
+    if (funcExpr && typeof funcExpr === 'object') {
+      if (funcExpr.type === 'identifier') {
+        return funcExpr.name || funcExpr.value || 'unknown';
+      }
+      if (funcExpr.name) {
+        return funcExpr.name;
+      }
+      if (funcExpr.value) {
+        return funcExpr.value;
+      }
+    }
+    return String(funcExpr || 'unknown');
   }
 }
